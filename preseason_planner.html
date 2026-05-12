@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Preseason Planner – Verfügbarkeit</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 24px; }
+  h1 { margin-bottom: 8px; }
+  .subtitle { color: #666; margin-bottom: 24px; }
+  .chart-container { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+  .chart-title { font-size: 1.1em; font-weight: 600; margin-bottom: 16px; }
+  .bar-chart { display: flex; align-items: flex-end; gap: 2px; height: 180px; border-bottom: 2px solid #ddd; padding-bottom: 0; }
+  .bar-wrapper { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
+  .bar { width: 100%; min-width: 18px; border-radius: 3px 3px 0 0; transition: opacity 0.2s; cursor: pointer; position: relative; }
+  .bar:hover { opacity: 0.8; }
+  .bar-label { font-size: 10px; color: #666; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); height: 60px; display: flex; align-items: center; }
+  .bar-value { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
+  .matrix-container { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 800px; }
+  th, td { padding: 6px 4px; text-align: center; font-size: 12px; border: 1px solid #eee; }
+  th { background: #f9f9f9; font-weight: 600; position: sticky; top: 0; }
+  th.name-col { text-align: left; min-width: 120px; }
+  td.name-col { text-align: left; font-weight: 500; white-space: nowrap; }
+  td.available { background: #c8e6c9; }
+  td.absent { background: #ef9a9a; }
+  td.partial { background: #fff9c4; }
+  tr.summary-row td { font-weight: 700; font-size: 13px; background: #e3f2fd !important; }
+  tr.summary-row td.best { background: #a5d6a7 !important; }
+  .legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: #666; }
+  .legend-item { display: flex; align-items: center; gap: 4px; }
+  .legend-swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #ccc; }
+  .tooltip { position: absolute; background: #333; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; pointer-events: none; z-index: 10; }
+</style>
+</head>
+<body>
+<h1>🏐 Preseason Planner</h1>
+<p class="subtitle">Verfügbarkeit Mai – September 2026 (KW 20 – KW 39)</p>
+
+<div class="chart-container">
+  <div class="chart-title">Verfügbare Spieler pro Woche</div>
+  <div class="bar-chart" id="barChart"></div>
+</div>
+
+<div class="matrix-container">
+  <div class="chart-title">Detailansicht: Wer fehlt wann?</div>
+  <table id="matrix"></table>
+  <div class="legend">
+    <div class="legend-item"><div class="legend-swatch" style="background:#c8e6c9"></div> Verfügbar</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fff9c4"></div> Teilweise weg (≤2 Tage)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ef9a9a"></div> Abwesend (≥3 Tage)</div>
+  </div>
+</div>
+
+<script>
+// === DATA ===
+const vacationData = [
+  { name: "Joke", start: "14.05.26", end: "16.05.26" },
+  { name: "Jan Saade", start: "14.05.26", end: "17.05.26" },
+  { name: "Basti", start: "21.05.26", end: "21.05.26" },
+  { name: "Joke", start: "21.05.26", end: "31.05.26" },
+  { name: "Nico Kraemer", start: "20.05.26", end: "08.06.26" },
+  { name: "Julian", start: "11.06.26", end: "14.06.26" },
+  { name: "Lorenz", start: "11.05.26", end: "18.06.26" },
+  { name: "Joke", start: "09.06.26", end: "19.06.26" },
+  { name: "Jan Scheel", start: "18.06.26", end: "21.06.26" },
+  { name: "David", start: "18.06.26", end: "21.06.26" },
+  { name: "Julian", start: "25.06.26", end: "28.06.26" },
+  { name: "Basti", start: "24.06.26", end: "28.06.26" },
+  { name: "Nico Neuenfeldt", start: "22.06.26", end: "28.06.26" },
+  { name: "Hendrik", start: "19.06.26", end: "28.06.26" },
+  { name: "Jan Saade", start: "24.06.26", end: "29.06.26" },
+  { name: "Myong-Su", start: "26.06.26", end: "30.06.26" },
+  { name: "Paul Wudtke", start: "22.06.26", end: "05.07.26" },
+  { name: "Julian", start: "10.07.26", end: "13.07.26" },
+  { name: "Jan Saade", start: "06.07.26", end: "13.07.26" },
+  { name: "Joke", start: "16.07.26", end: "19.07.26" },
+  { name: "David", start: "11.07.26", end: "19.07.26" },
+  { name: "Nico Kraemer", start: "16.07.26", end: "21.07.26" },
+  { name: "Leo", start: "20.07.26", end: "27.07.26" },
+  { name: "Kevin", start: "17.07.26", end: "27.07.26" },
+  { name: "Hendrik", start: "25.07.26", end: "02.08.26" },
+  { name: "Joke", start: "30.07.26", end: "03.08.26" },
+  { name: "Felix Saade", start: "15.07.26", end: "07.08.26" },
+  { name: "Johan", start: "24.07.26", end: "09.08.26" },
+  { name: "Lorenz", start: "13.07.26", end: "19.08.26" },
+  { name: "Nico Neuenfeldt", start: "17.08.26", end: "23.08.26" },
+  { name: "Johan", start: "21.08.26", end: "30.08.26" },
+  { name: "Joke", start: "28.08.26", end: "31.08.26" },
+  { name: "David", start: "27.08.26", end: "31.08.26" },
+  { name: "Kevin", start: "27.08.26", end: "01.09.26" },
+  { name: "Hendrik", start: "24.08.26", end: "01.09.26" },
+  { name: "Felix Saade", start: "07.08.26", end: "02.09.26" },
+  { name: "Leo", start: "24.08.26", end: "04.09.26" },
+  { name: "Jan Scheel", start: "27.08.26", end: "06.09.26" },
+  { name: "Jan Saade", start: "07.08.26", end: "06.09.26" },
+  { name: "Paul Wudtke", start: "31.08.26", end: "13.09.26" },
+  { name: "Myong-Su", start: "28.08.26", end: "13.09.26" },
+  { name: "Jan Scheel", start: "21.09.26", end: "27.09.26" },
+  { name: "David", start: "12.09.26", end: "28.09.26" },
+  { name: "Johan", start: "24.09.26", end: "04.10.26" },
+  { name: "Paul Wudtke", start: "09.10.26", end: "11.10.26" },
+  { name: "Jan Saade", start: "19.10.26", end: "31.10.26" },
+  { name: "Basti", start: "27.07.26", end: "31.01.27" },
+  { name: "Julian", start: "14.09.26", end: "28.02.27" },
+];
+
+// === HELPERS ===
+function parseDate(str) {
+  const [d, m, y] = str.split(".");
+  const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);
+  return new Date(year, parseInt(m) - 1, parseInt(d));
+}
+
+function getISOWeek(date) {
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function getWeekStart(year, week) {
+  // ISO week: Monday of that week
+  const jan4 = new Date(year, 0, 4);
+  const dayOfWeek = jan4.getDay() || 7;
+  const monday = new Date(jan4);
+  monday.setDate(jan4.getDate() - dayOfWeek + 1 + (week - 1) * 7);
+  return monday;
+}
+
+function daysInWeekAbsent(vacStart, vacEnd, weekStart) {
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6); // Sunday
+  const overlapStart = vacStart > weekStart ? vacStart : weekStart;
+  const overlapEnd = vacEnd < weekEnd ? vacEnd : weekEnd;
+  if (overlapStart > overlapEnd) return 0;
+  return Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+}
+
+// === COMPUTE ===
+const TEAM = [...new Set(vacationData.map(v => v.name))].sort();
+const START_WEEK = 20;
+const END_WEEK = 39;
+const YEAR = 2026;
+
+const weeks = [];
+for (let w = START_WEEK; w <= END_WEEK; w++) {
+  weeks.push({ num: w, start: getWeekStart(YEAR, w) });
+}
+
+// For each person and week, compute absent days
+const absenceMap = {}; // { name: { weekNum: daysAbsent } }
+TEAM.forEach(name => { absenceMap[name] = {}; });
+
+vacationData.forEach(v => {
+  const start = parseDate(v.start);
+  const end = parseDate(v.end);
+  weeks.forEach(week => {
+    const days = daysInWeekAbsent(start, end, week.start);
+    if (days > 0) {
+      absenceMap[v.name][week.num] = (absenceMap[v.name][week.num] || 0) + days;
+    }
+  });
+});
+
+// Availability per week (absent >= 3 days = absent for the week)
+const ABSENT_THRESHOLD = 3;
+const availablePerWeek = weeks.map(week => {
+  let count = 0;
+  TEAM.forEach(name => {
+    const daysOff = absenceMap[name][week.num] || 0;
+    if (daysOff < ABSENT_THRESHOLD) count++;
+  });
+  return count;
+});
+
+const maxAvailable = Math.max(...availablePerWeek);
+const maxPossible = TEAM.length;
+
+// === RENDER BAR CHART ===
+const barChart = document.getElementById("barChart");
+weeks.forEach((week, i) => {
+  const count = availablePerWeek[i];
+  const pct = (count / maxPossible) * 100;
+  const wrapper = document.createElement("div");
+  wrapper.className = "bar-wrapper";
+
+  const value = document.createElement("div");
+  value.className = "bar-value";
+  value.textContent = count;
+
+  const bar = document.createElement("div");
+  bar.className = "bar";
+  bar.style.height = pct + "%";
+
+  // Color gradient: green (good) -> orange (meh) -> red (bad)
+  const ratio = count / maxPossible;
+  if (ratio >= 0.8) bar.style.background = "#43a047";
+  else if (ratio >= 0.6) bar.style.background = "#7cb342";
+  else if (ratio >= 0.4) bar.style.background = "#fdd835";
+  else bar.style.background = "#e53935";
+
+  if (count === maxAvailable) {
+    bar.style.outline = "2px solid #1b5e20";
+  }
+
+  const label = document.createElement("div");
+  label.className = "bar-label";
+  const ws = week.start;
+  label.textContent = `KW${week.num} (${ws.getDate()}.${ws.getMonth()+1})`;
+
+  wrapper.appendChild(value);
+  wrapper.appendChild(bar);
+  wrapper.appendChild(label);
+  barChart.appendChild(wrapper);
+});
+
+// === RENDER MATRIX ===
+const table = document.getElementById("matrix");
+// Header
+let headerHTML = '<thead><tr><th class="name-col">Spieler</th>';
+weeks.forEach(week => {
+  headerHTML += `<th>KW${week.num}</th>`;
+});
+headerHTML += "</tr></thead>";
+
+// Body
+let bodyHTML = "<tbody>";
+TEAM.forEach(name => {
+  bodyHTML += `<tr><td class="name-col">${name}</td>`;
+  weeks.forEach(week => {
+    const days = absenceMap[name][week.num] || 0;
+    let cls = "available";
+    let title = "Verfügbar";
+    if (days >= ABSENT_THRESHOLD) { cls = "absent"; title = `${days} Tage weg`; }
+    else if (days > 0) { cls = "partial"; title = `${days} Tag(e) weg`; }
+    bodyHTML += `<td class="${cls}" title="${title}">${days > 0 ? days : ""}</td>`;
+  });
+  bodyHTML += "</tr>";
+});
+
+// Summary row
+bodyHTML += '<tr class="summary-row"><td class="name-col">Verfügbar</td>';
+weeks.forEach((week, i) => {
+  const count = availablePerWeek[i];
+  const cls = count === maxAvailable ? "best" : "";
+  bodyHTML += `<td class="${cls}">${count}/${maxPossible}</td>`;
+});
+bodyHTML += "</tr></tbody>";
+
+table.innerHTML = headerHTML + bodyHTML;
+</script>
+</body>
+</html>
