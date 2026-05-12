@@ -45,7 +45,7 @@
 </head>
 <body>
 <h1>🏐 Preseason Planner</h1>
-<p class="subtitle">Verfügbarkeit Mai – September 2026 (KW 20 – KW 39)</p>
+<p class="subtitle">Verfügbarkeit Juni – September 2026</p>
 
 <div class="matrix-container">
   <div class="chart-title">Verfügbarkeit pro Woche</div>
@@ -65,7 +65,10 @@
 
 <div id="day-popover" class="popover" aria-hidden="true"></div>
 
-<script>
+<script type="module">
+import { parse, getISOWeek, startOfISOWeek, setISOWeek, addDays, format, isWithinInterval } from "https://cdn.jsdelivr.net/npm/date-fns@4/+esm";
+import { de } from "https://cdn.jsdelivr.net/npm/date-fns@4/locale/de/+esm";
+
 // === DATA ===
 const vacationData = [
   { name: "Joke", start: "14.05.26", end: "16.05.26" },
@@ -120,120 +123,81 @@ const vacationData = [
 
 // === HELPERS ===
 function parseDate(str) {
-  const [d, m, y] = str.split(".");
-  const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);
-  return new Date(year, parseInt(m) - 1, parseInt(d));
-}
-
-function getISOWeek(date) {
-  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
-  const dayNum = d.getUTCDay() || 7;
-  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
-  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
-  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+  return parse(str, "dd.MM.yy", new Date());
 }
 
 function formatDayMonth(date) {
-  const day = String(date.getDate()).padStart(2, "0");
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  return `${day}.${month}.`;
+  return format(date, "dd.MM.");
 }
 
 function formatFullDate(date) {
-  return new Intl.DateTimeFormat("de-DE", {
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric"
-  }).format(date);
+  return format(date, "EEEE, dd.MM.yyyy", { locale: de });
 }
 
 function getWeekStart(year, week) {
-  // ISO week: Monday of that week
-  const jan4 = new Date(year, 0, 4);
-  const dayOfWeek = jan4.getDay() || 7;
-  const monday = new Date(jan4);
-  monday.setDate(jan4.getDate() - dayOfWeek + 1 + (week - 1) * 7);
-  return monday;
-}
-
-function daysInWeekAbsent(vacStart, vacEnd, weekStart) {
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6); // Sunday
-  const overlapStart = vacStart > weekStart ? vacStart : weekStart;
-  const overlapEnd = vacEnd < weekEnd ? vacEnd : weekEnd;
-  if (overlapStart > overlapEnd) return 0;
-  return Math.round((overlapEnd - overlapStart) / 86400000) + 1;
+  return startOfISOWeek(setISOWeek(new Date(year, 0, 4), week));
 }
 
 // === COMPUTE ===
 const TEAM = [...new Set(vacationData.map(v => v.name))].sort();
 const GOALKEEPERS = new Set(["David", "Basti", "Felix Saade"]);
-const START_WEEK = 20;
-const END_WEEK = 39;
 const YEAR = 2026;
+const DISPLAY_START_DATE = new Date(YEAR, 5, 1);
+const START_WEEK = getISOWeek(DISPLAY_START_DATE);
+const END_WEEK = 39;
+const UNAVAILABLE_PLAYERS = new Set(["Leo", "Julian", "Basti"]);
 
 const weeks = [];
 for (let w = START_WEEK; w <= END_WEEK; w++) {
   weeks.push({ num: w, start: getWeekStart(YEAR, w) });
 }
 
-// For each person and week, compute absent days AND per-day flags
-const absenceMap = {}; // { name: { weekNum: daysAbsent } }
+// For each person and week, compute per-day absence flags
 const dayAbsenceMap = {}; // { name: { weekNum: [bool x 7] } }
-TEAM.forEach(name => { absenceMap[name] = {}; dayAbsenceMap[name] = {}; });
+TEAM.forEach(name => { dayAbsenceMap[name] = {}; });
 
 function isDayAbsent(name, dayDate) {
   return vacationData.some(v => {
     if (v.name !== name) return false;
-    const s = parseDate(v.start);
-    const e = parseDate(v.end);
-    return dayDate >= s && dayDate <= e;
+    return isWithinInterval(dayDate, { start: parseDate(v.start), end: parseDate(v.end) });
   });
 }
 
 weeks.forEach(week => {
   TEAM.forEach(name => {
-    const days = [false,false,false,false,false,false,false];
-    let count = 0;
-    for (let d = 0; d < 7; d++) {
-      const dayDate = new Date(week.start);
-      dayDate.setDate(week.start.getDate() + d);
-      if (isDayAbsent(name, dayDate)) { days[d] = true; count++; }
-    }
-    dayAbsenceMap[name][week.num] = days;
-    if (count > 0) absenceMap[name][week.num] = count;
+    dayAbsenceMap[name][week.num] = Array.from({ length: 7 }, (_, d) => isDayAbsent(name, addDays(week.start, d)));
   });
 });
 
-const WEEKDAY_INDICES = [0, 1, 2, 3, 4];
-const TOTAL_WEEKDAYS = WEEKDAY_INDICES.length;
 const MIN_SEMI_AVAILABLE_WEEKDAYS = 2;
 
 function getAvailableWeekdays(dayFlags) {
-  return WEEKDAY_INDICES.reduce((count, index) => count + (dayFlags[index] ? 0 : 1), 0);
+  return dayFlags.slice(0, 5).filter(v => !v).length;
 }
 
-const availablePerWeek = weeks.map(week => {
-  let count = 0;
-  TEAM.forEach(name => {
-    const dayFlags = dayAbsenceMap[name][week.num];
-    if (getAvailableWeekdays(dayFlags) >= MIN_SEMI_AVAILABLE_WEEKDAYS) count++;
-  });
-  return count;
-});
-
-const maxAvailable = Math.max(...availablePerWeek);
-const maxPossible = TEAM.length;
+// Single pass: compute week stats and availability totals together
 const availabilityStats = Object.fromEntries(TEAM.map(name => [name, { availableDays: 0, absentDays: 0 }]));
 
-TEAM.forEach(name => {
-  weeks.forEach(week => {
-    const daysOff = absenceMap[name][week.num] || 0;
-    availabilityStats[name].absentDays += daysOff;
-    availabilityStats[name].availableDays += 7 - daysOff;
+const weekStats = weeks.map(week => {
+  let availableCount = 0;
+  const fullyAvailable = [];
+  const semiAvailable = [];
+
+  TEAM.forEach(name => {
+    const dayFlags = dayAbsenceMap[name][week.num];
+    const avail = getAvailableWeekdays(dayFlags);
+    const absent = dayFlags.filter(Boolean).length;
+    availabilityStats[name].absentDays += absent;
+    availabilityStats[name].availableDays += 7 - absent;
+    if (avail === 5) { fullyAvailable.push(name); availableCount++; }
+    else if (avail >= MIN_SEMI_AVAILABLE_WEEKDAYS) { semiAvailable.push(name); availableCount++; }
   });
+
+  return { availableCount, fullyAvailable, semiAvailable };
 });
+
+const maxAvailable = Math.max(...weekStats.map(s => s.availableCount));
+const maxPossible = TEAM.length;
 
 function sortByAvailability(names) {
   return [...names].sort((left, right) => {
@@ -251,23 +215,10 @@ function sortByAvailability(names) {
 }
 
 const groupedTeam = [
-  { label: "Spieler", names: sortByAvailability(TEAM.filter(name => !GOALKEEPERS.has(name))) },
-  { label: "Torwärte", names: sortByAvailability(TEAM.filter(name => GOALKEEPERS.has(name))) }
+  { label: "Spieler", names: sortByAvailability(TEAM.filter(name => !GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name))) },
+  { label: "Torwarte", names: sortByAvailability(TEAM.filter(name => GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name))) },
+  { label: "Invalide/Ausland", names: sortByAvailability(TEAM.filter(name => UNAVAILABLE_PLAYERS.has(name))) }
 ];
-
-const weeklyPeople = weeks.map(week => {
-  const fullyAvailable = [];
-  const semiAvailable = [];
-
-  TEAM.forEach(name => {
-    const dayFlags = dayAbsenceMap[name][week.num];
-    const availableWeekdays = getAvailableWeekdays(dayFlags);
-    if (availableWeekdays === TOTAL_WEEKDAYS) fullyAvailable.push(name);
-    else if (availableWeekdays >= MIN_SEMI_AVAILABLE_WEEKDAYS) semiAvailable.push(name);
-  });
-
-  return { fullyAvailable, semiAvailable };
-});
 
 // === RENDER COMBINED TABLE ===
 const table = document.getElementById("matrix");
@@ -312,8 +263,7 @@ function showPopover(target, persist = false) {
 let headerHTML = '<thead><tr><th class="name-col">Spieler</th>';
 weeks.forEach(week => {
   const ws = week.start;
-  const we = new Date(ws);
-  we.setDate(ws.getDate() + 6);
+  const we = addDays(ws, 6);
   headerHTML += `<th>KW${week.num}<br><span style="font-weight:400;font-size:10px;color:#888">${formatDayMonth(ws)} - ${formatDayMonth(we)}</span></th>`;
 });
 headerHTML += "</tr></thead>";
@@ -322,7 +272,7 @@ headerHTML += "</tr></thead>";
 let bodyHTML = "<tbody>";
 bodyHTML += '<tr class="bar-row"><td class="name-col" style="font-weight:600;font-size:12px;">Verfügbar</td>';
 weeks.forEach((week, i) => {
-  const count = availablePerWeek[i];
+  const count = weekStats[i].availableCount;
   const pct = (count / maxPossible) * 100;
   const ratio = count / maxPossible;
   let color;
@@ -337,7 +287,7 @@ bodyHTML += "</tr>";
 
 bodyHTML += '<tr class="week-summary-row"><td class="week-summary-label">Kader</td>';
 weeks.forEach((week, i) => {
-  const { fullyAvailable, semiAvailable } = weeklyPeople[i];
+  const { fullyAvailable, semiAvailable } = weekStats[i];
   const items = [];
   fullyAvailable.forEach(name => {
     items.push(`<span class="week-summary-name">${name}</span>`);
@@ -356,7 +306,6 @@ bodyHTML += '</tr>';
 bodyHTML += '<tr style="height:8px"><td colspan="' + (weeks.length + 1) + '" style="border:none;padding:0"></td></tr>';
 
 // Player rows
-const dayLabels = ['Mo','Di','Mi','Do','Fr','Sa','So'];
 groupedTeam.forEach(group => {
   bodyHTML += `<tr class="category-row"><td colspan="${weeks.length + 1}">${group.label}</td></tr>`;
   group.names.forEach(name => {
@@ -366,8 +315,7 @@ groupedTeam.forEach(group => {
       let dots = '<div class="days-grid">';
       for (let d = 0; d < 7; d++) {
         const dotCls = dayFlags[d] ? 'away' : 'here';
-        const dayDate = new Date(week.start);
-        dayDate.setDate(week.start.getDate() + d);
+        const dayDate = addDays(week.start, d);
         const fullDate = formatFullDate(dayDate);
         dots += `<button type="button" class="day-square ${dotCls}" data-person="${name}" data-date="${fullDate}" aria-label="${name}, ${fullDate}"></button>`;
       }
