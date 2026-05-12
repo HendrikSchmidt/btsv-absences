@@ -22,15 +22,10 @@
   th { background: #f9f9f9; font-weight: 600; position: sticky; top: 0; }
   th.name-col { text-align: left; min-width: 120px; }
   td.name-col { text-align: left; font-weight: 500; white-space: nowrap; }
-  td.available { background: #c8e6c9; }
-  td.absent { background: #ef9a9a; }
-  td.partial { background: #fff9c4; }
-  .dots { display: flex; gap: 1px; justify-content: center; align-items: center; }
-  .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-  .dot.here { background: #43a047; }
-  .dot.away { background: #e53935; }
-  tr.summary-row td { font-weight: 700; font-size: 13px; background: #e3f2fd !important; }
-  tr.summary-row td.best { background: #a5d6a7 !important; }
+  td.day-cell { background: transparent; padding: 3px 2px; }
+  .days-grid { display: grid; grid-template-columns: repeat(7, 11px); gap: 1px; justify-content: center; align-items: center; }
+  .day-square { width: 11px; height: 11px; border-radius: 2px; background: #ebedf0; }
+  .day-square.away { background: #216e39; }
   .legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: #666; }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #ccc; }
@@ -44,9 +39,8 @@
   <div class="chart-title">Verfügbarkeit pro Woche</div>
   <table id="matrix"></table>
   <div class="legend">
-    <div class="legend-item"><div class="legend-swatch" style="background:#c8e6c9"></div> Verfügbar</div>
-    <div class="legend-item"><div class="legend-swatch" style="background:#fff9c4"></div> Teilweise weg (≤2 Tage)</div>
-    <div class="legend-item"><div class="legend-swatch" style="background:#ef9a9a"></div> Abwesend (≥3 Tage)</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#ebedf0"></div> Verfügbar</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#216e39"></div> Urlaub</div>
   </div>
 </div>
 
@@ -227,19 +221,16 @@ TEAM.forEach(name => {
   weeks.forEach(week => {
     const days = absenceMap[name][week.num] || 0;
     const dayFlags = dayAbsenceMap[name][week.num];
-    let cls = "available";
-    if (days >= ABSENT_THRESHOLD) cls = "absent";
-    else if (days > 0) cls = "partial";
-    let dots = '<div class="dots">';
+    let dots = '<div class="days-grid">';
     for (let d = 0; d < 7; d++) {
       const dotCls = dayFlags[d] ? 'away' : 'here';
       const dayDate = new Date(week.start);
       dayDate.setDate(week.start.getDate() + d);
       const title = `${dayLabels[d]} ${dayDate.getDate()}.${dayDate.getMonth()+1}`;
-      dots += `<div class="dot ${dotCls}" title="${title}"></div>`;
+      dots += `<div class="day-square ${dotCls}" title="${title}"></div>`;
     }
     dots += '</div>';
-    bodyHTML += `<td class="${cls}">${dots}</td>`;
+    bodyHTML += `<td class="day-cell">${dots}</td>`;
   });
   bodyHTML += "</tr>";
 });
