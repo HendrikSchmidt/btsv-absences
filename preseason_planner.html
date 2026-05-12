@@ -9,15 +9,14 @@
   body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f5f5f5; color: #333; padding: 24px; }
   h1 { margin-bottom: 8px; }
   .subtitle { color: #666; margin-bottom: 24px; }
-  .chart-container { background: #fff; border-radius: 8px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
   .chart-title { font-size: 1.1em; font-weight: 600; margin-bottom: 16px; }
-  .bar-chart { display: flex; align-items: flex-end; gap: 2px; height: 180px; border-bottom: 2px solid #ddd; padding-bottom: 0; }
-  .bar-wrapper { display: flex; flex-direction: column; align-items: center; flex: 1; height: 100%; justify-content: flex-end; }
-  .bar { width: 100%; min-width: 18px; border-radius: 3px 3px 0 0; transition: opacity 0.2s; cursor: pointer; position: relative; }
-  .bar:hover { opacity: 0.8; }
-  .bar-label { font-size: 10px; color: #666; margin-top: 4px; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); height: 60px; display: flex; align-items: center; }
-  .bar-value { font-size: 11px; font-weight: 600; margin-bottom: 2px; }
   .matrix-container { background: #fff; border-radius: 8px; padding: 24px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); overflow-x: auto; }
+  tr.bar-row td { border: none; vertical-align: bottom; padding: 0 2px; height: 120px; }
+  tr.bar-row td.name-col { vertical-align: middle; }
+  .bar-cell { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; }
+  .bar { width: 100%; min-width: 14px; border-radius: 3px 3px 0 0; transition: opacity 0.2s; }
+  .bar:hover { opacity: 0.8; }
+  .bar-value { font-size: 11px; font-weight: 600; margin-bottom: 2px; text-align: center; }
   table { border-collapse: collapse; width: 100%; min-width: 800px; }
   th, td { padding: 6px 4px; text-align: center; font-size: 12px; border: 1px solid #eee; }
   th { background: #f9f9f9; font-weight: 600; position: sticky; top: 0; }
@@ -26,25 +25,23 @@
   td.available { background: #c8e6c9; }
   td.absent { background: #ef9a9a; }
   td.partial { background: #fff9c4; }
+  .dots { display: flex; gap: 1px; justify-content: center; align-items: center; }
+  .dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .dot.here { background: #43a047; }
+  .dot.away { background: #e53935; }
   tr.summary-row td { font-weight: 700; font-size: 13px; background: #e3f2fd !important; }
   tr.summary-row td.best { background: #a5d6a7 !important; }
   .legend { display: flex; gap: 16px; margin-top: 12px; font-size: 12px; color: #666; }
   .legend-item { display: flex; align-items: center; gap: 4px; }
   .legend-swatch { width: 14px; height: 14px; border-radius: 2px; border: 1px solid #ccc; }
-  .tooltip { position: absolute; background: #333; color: #fff; padding: 4px 8px; border-radius: 4px; font-size: 11px; white-space: nowrap; pointer-events: none; z-index: 10; }
 </style>
 </head>
 <body>
 <h1>🏐 Preseason Planner</h1>
 <p class="subtitle">Verfügbarkeit Mai – September 2026 (KW 20 – KW 39)</p>
 
-<div class="chart-container">
-  <div class="chart-title">Verfügbare Spieler pro Woche</div>
-  <div class="bar-chart" id="barChart"></div>
-</div>
-
 <div class="matrix-container">
-  <div class="chart-title">Detailansicht: Wer fehlt wann?</div>
+  <div class="chart-title">Verfügbarkeit pro Woche</div>
   <table id="matrix"></table>
   <div class="legend">
     <div class="legend-item"><div class="legend-swatch" style="background:#c8e6c9"></div> Verfügbar</div>
@@ -150,18 +147,31 @@ for (let w = START_WEEK; w <= END_WEEK; w++) {
   weeks.push({ num: w, start: getWeekStart(YEAR, w) });
 }
 
-// For each person and week, compute absent days
+// For each person and week, compute absent days AND per-day flags
 const absenceMap = {}; // { name: { weekNum: daysAbsent } }
-TEAM.forEach(name => { absenceMap[name] = {}; });
+const dayAbsenceMap = {}; // { name: { weekNum: [bool x 7] } }
+TEAM.forEach(name => { absenceMap[name] = {}; dayAbsenceMap[name] = {}; });
 
-vacationData.forEach(v => {
-  const start = parseDate(v.start);
-  const end = parseDate(v.end);
-  weeks.forEach(week => {
-    const days = daysInWeekAbsent(start, end, week.start);
-    if (days > 0) {
-      absenceMap[v.name][week.num] = (absenceMap[v.name][week.num] || 0) + days;
+function isDayAbsent(name, dayDate) {
+  return vacationData.some(v => {
+    if (v.name !== name) return false;
+    const s = parseDate(v.start);
+    const e = parseDate(v.end);
+    return dayDate >= s && dayDate <= e;
+  });
+}
+
+weeks.forEach(week => {
+  TEAM.forEach(name => {
+    const days = [false,false,false,false,false,false,false];
+    let count = 0;
+    for (let d = 0; d < 7; d++) {
+      const dayDate = new Date(week.start);
+      dayDate.setDate(week.start.getDate() + d);
+      if (isDayAbsent(name, dayDate)) { days[d] = true; count++; }
     }
+    dayAbsenceMap[name][week.num] = days;
+    if (count > 0) absenceMap[name][week.num] = count;
   });
 });
 
@@ -179,76 +189,62 @@ const availablePerWeek = weeks.map(week => {
 const maxAvailable = Math.max(...availablePerWeek);
 const maxPossible = TEAM.length;
 
-// === RENDER BAR CHART ===
-const barChart = document.getElementById("barChart");
-weeks.forEach((week, i) => {
-  const count = availablePerWeek[i];
-  const pct = (count / maxPossible) * 100;
-  const wrapper = document.createElement("div");
-  wrapper.className = "bar-wrapper";
-
-  const value = document.createElement("div");
-  value.className = "bar-value";
-  value.textContent = count;
-
-  const bar = document.createElement("div");
-  bar.className = "bar";
-  bar.style.height = pct + "%";
-
-  // Color gradient: green (good) -> orange (meh) -> red (bad)
-  const ratio = count / maxPossible;
-  if (ratio >= 0.8) bar.style.background = "#43a047";
-  else if (ratio >= 0.6) bar.style.background = "#7cb342";
-  else if (ratio >= 0.4) bar.style.background = "#fdd835";
-  else bar.style.background = "#e53935";
-
-  if (count === maxAvailable) {
-    bar.style.outline = "2px solid #1b5e20";
-  }
-
-  const label = document.createElement("div");
-  label.className = "bar-label";
-  const ws = week.start;
-  label.textContent = `KW${week.num} (${ws.getDate()}.${ws.getMonth()+1})`;
-
-  wrapper.appendChild(value);
-  wrapper.appendChild(bar);
-  wrapper.appendChild(label);
-  barChart.appendChild(wrapper);
-});
-
-// === RENDER MATRIX ===
+// === RENDER COMBINED TABLE ===
 const table = document.getElementById("matrix");
+
 // Header
 let headerHTML = '<thead><tr><th class="name-col">Spieler</th>';
 weeks.forEach(week => {
-  headerHTML += `<th>KW${week.num}</th>`;
+  const ws = week.start;
+  headerHTML += `<th>KW${week.num}<br><span style="font-weight:400;font-size:10px;color:#888">${ws.getDate()}.${ws.getMonth()+1}</span></th>`;
 });
 headerHTML += "</tr></thead>";
 
-// Body
+// Body: bar chart row first
 let bodyHTML = "<tbody>";
+bodyHTML += '<tr class="bar-row"><td class="name-col" style="font-weight:600;font-size:12px;">Verfügbar</td>';
+weeks.forEach((week, i) => {
+  const count = availablePerWeek[i];
+  const pct = (count / maxPossible) * 100;
+  const ratio = count / maxPossible;
+  let color;
+  if (ratio >= 0.8) color = "#43a047";
+  else if (ratio >= 0.6) color = "#7cb342";
+  else if (ratio >= 0.4) color = "#fdd835";
+  else color = "#e53935";
+  const outline = count === maxAvailable ? "outline:2px solid #1b5e20;" : "";
+  bodyHTML += `<td><div class="bar-cell"><div class="bar-value">${count}</div><div class="bar" style="height:${pct}%;background:${color};${outline}"></div></div></td>`;
+});
+bodyHTML += "</tr>";
+
+// Spacer row
+bodyHTML += '<tr style="height:8px"><td colspan="' + (weeks.length + 1) + '" style="border:none;padding:0"></td></tr>';
+
+// Player rows
+const dayLabels = ['Mo','Di','Mi','Do','Fr','Sa','So'];
 TEAM.forEach(name => {
   bodyHTML += `<tr><td class="name-col">${name}</td>`;
   weeks.forEach(week => {
     const days = absenceMap[name][week.num] || 0;
+    const dayFlags = dayAbsenceMap[name][week.num];
     let cls = "available";
-    let title = "Verfügbar";
-    if (days >= ABSENT_THRESHOLD) { cls = "absent"; title = `${days} Tage weg`; }
-    else if (days > 0) { cls = "partial"; title = `${days} Tag(e) weg`; }
-    bodyHTML += `<td class="${cls}" title="${title}">${days > 0 ? days : ""}</td>`;
+    if (days >= ABSENT_THRESHOLD) cls = "absent";
+    else if (days > 0) cls = "partial";
+    let dots = '<div class="dots">';
+    for (let d = 0; d < 7; d++) {
+      const dotCls = dayFlags[d] ? 'away' : 'here';
+      const dayDate = new Date(week.start);
+      dayDate.setDate(week.start.getDate() + d);
+      const title = `${dayLabels[d]} ${dayDate.getDate()}.${dayDate.getMonth()+1}`;
+      dots += `<div class="dot ${dotCls}" title="${title}"></div>`;
+    }
+    dots += '</div>';
+    bodyHTML += `<td class="${cls}">${dots}</td>`;
   });
   bodyHTML += "</tr>";
 });
 
-// Summary row
-bodyHTML += '<tr class="summary-row"><td class="name-col">Verfügbar</td>';
-weeks.forEach((week, i) => {
-  const count = availablePerWeek[i];
-  const cls = count === maxAvailable ? "best" : "";
-  bodyHTML += `<td class="${cls}">${count}/${maxPossible}</td>`;
-});
-bodyHTML += "</tr></tbody>";
+bodyHTML += "</tbody>";
 
 table.innerHTML = headerHTML + bodyHTML;
 </script>
