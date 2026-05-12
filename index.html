@@ -23,11 +23,10 @@
   th.name-col { text-align: left; min-width: 120px; }
   td.name-col { text-align: left; font-weight: 500; white-space: nowrap; }
   .category-row td { background: #f3f6f8; font-weight: 700; text-align: left; padding: 8px 10px; }
-  td.day-cell { background: transparent; padding: 0 2px; border-left: none; border-right: none; }
-  .days-grid { display: grid; grid-template-columns: repeat(7, 13px); gap: 1px; justify-content: start; align-items: center; }
-  .day-square { width: 13px; height: 13px; border: none; border-radius: 1px; background: #43a047; padding: 0; cursor: pointer; }
-  .day-square.away { background: #e53935; }
-  .day-square:focus-visible { outline: 2px solid #1b5e20; outline-offset: 2px; }
+  td.day-cell { background: transparent; padding: 0; border-left: none; border-right: none; }
+  .gantt-row { position: relative; width: 100%; height: 24px; }
+  .gantt-bar { position: absolute; height: 14px; top: 50%; transform: translateY(-50%); background: #e53935; cursor: pointer; transition: filter 0.15s; }
+  .gantt-bar:hover { filter: brightness(1.15); }
   .week-summary-row td { padding: 8px 4px 10px; vertical-align: top; border-top: none; }
   .week-summary-label { text-align: left; font-weight: 600; color: #222; }
   .week-summary-cell { text-align: left; font-size: 11px; line-height: 1.35; white-space: normal; color: #222; }
@@ -58,7 +57,9 @@
     </tbody>
   </table>
   <div class="legend">
-    <div class="legend-item"><div class="legend-swatch" style="background:#43a047"></div> Verfügbar</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#43a047"></div> Spieler</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#1e88e5"></div> Torwarte</div>
+    <div class="legend-item"><div class="legend-swatch" style="background:#fdd835;border-color:#ccc"></div> Ehre</div>
     <div class="legend-item"><div class="legend-swatch" style="background:#e53935"></div> Urlaub</div>
   </div>
 </div>
@@ -79,14 +80,14 @@ const vacationData = [
   { name: "Julian", start: "11.06.26", end: "14.06.26" },
   { name: "Lorenz", start: "11.05.26", end: "18.06.26" },
   { name: "Joke", start: "09.06.26", end: "19.06.26" },
-  { name: "Jan Scheel", start: "18.06.26", end: "21.06.26" },
+  { name: "Scheel", start: "18.06.26", end: "21.06.26" },
   { name: "David", start: "18.06.26", end: "21.06.26" },
   { name: "Julian", start: "25.06.26", end: "28.06.26" },
   { name: "Basti", start: "24.06.26", end: "28.06.26" },
   { name: "Nico Neuenfeldt", start: "22.06.26", end: "28.06.26" },
   { name: "Hendrik", start: "19.06.26", end: "28.06.26" },
   { name: "Jan Saade", start: "24.06.26", end: "29.06.26" },
-  { name: "Myong-Su", start: "26.06.26", end: "30.06.26" },
+  { name: "Myong", start: "26.06.26", end: "30.06.26" },
   { name: "Paul Wudtke", start: "22.06.26", end: "05.07.26" },
   { name: "Julian", start: "10.07.26", end: "13.07.26" },
   { name: "Jan Saade", start: "06.07.26", end: "13.07.26" },
@@ -108,11 +109,11 @@ const vacationData = [
   { name: "Hendrik", start: "24.08.26", end: "01.09.26" },
   { name: "Felix Saade", start: "07.08.26", end: "02.09.26" },
   { name: "Leo", start: "24.08.26", end: "04.09.26" },
-  { name: "Jan Scheel", start: "27.08.26", end: "06.09.26" },
+  { name: "Scheel", start: "27.08.26", end: "06.09.26" },
   { name: "Jan Saade", start: "07.08.26", end: "06.09.26" },
   { name: "Paul Wudtke", start: "31.08.26", end: "13.09.26" },
-  { name: "Myong-Su", start: "28.08.26", end: "13.09.26" },
-  { name: "Jan Scheel", start: "21.09.26", end: "27.09.26" },
+  { name: "Myong", start: "28.08.26", end: "13.09.26" },
+  { name: "Scheel", start: "21.09.26", end: "27.09.26" },
   { name: "David", start: "12.09.26", end: "28.09.26" },
   { name: "Johan", start: "24.09.26", end: "04.10.26" },
   { name: "Paul Wudtke", start: "09.10.26", end: "11.10.26" },
@@ -145,6 +146,7 @@ const YEAR = 2026;
 const DISPLAY_START_DATE = new Date(YEAR, 5, 1);
 const START_WEEK = getISOWeek(DISPLAY_START_DATE);
 const END_WEEK = 39;
+const DISPLAY_END_DATE = addDays(getWeekStart(YEAR, END_WEEK), 6);
 const UNAVAILABLE_PLAYERS = new Set(["Leo", "Julian", "Basti"]);
 
 const weeks = [];
@@ -169,55 +171,63 @@ weeks.forEach(week => {
   });
 });
 
-const MIN_SEMI_AVAILABLE_WEEKDAYS = 2;
-
-function getAvailableWeekdays(dayFlags) {
-  return dayFlags.slice(0, 5).filter(v => !v).length;
-}
-
-// Single pass: compute week stats and availability totals together
+// Compute availability stats for sorting
 const availabilityStats = Object.fromEntries(TEAM.map(name => [name, { availableDays: 0, absentDays: 0 }]));
 
-const weekStats = weeks.map(week => {
-  let availableCount = 0;
-  const fullyAvailable = [];
-  const semiAvailable = [];
-
+weeks.forEach(week => {
   TEAM.forEach(name => {
     const dayFlags = dayAbsenceMap[name][week.num];
-    const avail = getAvailableWeekdays(dayFlags);
     const absent = dayFlags.filter(Boolean).length;
     availabilityStats[name].absentDays += absent;
     availabilityStats[name].availableDays += 7 - absent;
-    if (avail === 5) { fullyAvailable.push(name); availableCount++; }
-    else if (avail >= MIN_SEMI_AVAILABLE_WEEKDAYS) { semiAvailable.push(name); availableCount++; }
   });
-
-  return { availableCount, fullyAvailable, semiAvailable };
 });
 
-const maxAvailable = Math.max(...weekStats.map(s => s.availableCount));
+// Tuesday = index 1, Thursday = index 3
+const weekStats = weeks.map(week => {
+  const tuesdayAvailable = [];
+  const thursdayAvailable = [];
+  TEAM.forEach(name => {
+    const dayFlags = dayAbsenceMap[name][week.num];
+    if (!dayFlags[1]) tuesdayAvailable.push(name);
+    if (!dayFlags[3]) thursdayAvailable.push(name);
+  });
+  return { tuesdayAvailable, thursdayAvailable };
+});
+
 const maxPossible = TEAM.length;
 
-function sortByAvailability(names) {
-  return [...names].sort((left, right) => {
-    const leftStats = availabilityStats[left];
-    const rightStats = availabilityStats[right];
+function barColor(count) {
+  const ratio = count / maxPossible;
+  if (ratio >= 0.8) return "#43a047";
+  if (ratio >= 0.6) return "#7cb342";
+  if (ratio >= 0.4) return "#fdd835";
+  return "#e53935";
+}
 
-    if (rightStats.availableDays !== leftStats.availableDays) {
-      return rightStats.availableDays - leftStats.availableDays;
-    }
-    if (leftStats.absentDays !== rightStats.absentDays) {
-      return leftStats.absentDays - rightStats.absentDays;
-    }
-    return left.localeCompare(right, "de");
+function firstAbsenceStart(name) {
+  const relevant = vacationData.filter(v =>
+    v.name === name &&
+    parseDate(v.end) >= DISPLAY_START_DATE &&
+    parseDate(v.start) <= DISPLAY_END_DATE
+  );
+  if (relevant.length === 0) return Infinity;
+  return Math.min(...relevant.map(v => parseDate(v.start).getTime()));
+}
+
+function sortByEarliestAbsence(names) {
+  return [...names].sort((a, b) => {
+    const aFirst = firstAbsenceStart(a);
+    const bFirst = firstAbsenceStart(b);
+    if (aFirst !== bFirst) return aFirst - bFirst;
+    return a.localeCompare(b, "de");
   });
 }
 
 const groupedTeam = [
-  { label: "Spieler", names: sortByAvailability(TEAM.filter(name => !GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name))) },
-  { label: "Torwarte", names: sortByAvailability(TEAM.filter(name => GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name))) },
-  { label: "Invalide/Ausland", names: sortByAvailability(TEAM.filter(name => UNAVAILABLE_PLAYERS.has(name))) }
+  { label: "Spieler", names: sortByEarliestAbsence(TEAM.filter(name => !GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name))) },
+  { label: "Torwarte", names: sortByEarliestAbsence(TEAM.filter(name => GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name))) },
+  { label: "Invalide/Ausland 🥺", names: sortByEarliestAbsence(TEAM.filter(name => UNAVAILABLE_PLAYERS.has(name))) }
 ];
 
 // === RENDER COMBINED TABLE ===
@@ -251,8 +261,8 @@ function positionPopover(target) {
 }
 
 function showPopover(target, persist = false) {
-  const { person, date } = target.dataset;
-  popover.innerHTML = `<div class="popover-name">${person}</div><div class="popover-date">${date}</div>`;
+  const { person, period } = target.dataset;
+  popover.innerHTML = `<div class="popover-name">${person}</div>${period ? `<div class="popover-date">${period}</div>` : ''}`;
   popover.classList.add("visible");
   popover.setAttribute("aria-hidden", "false");
   positionPopover(target);
@@ -270,37 +280,78 @@ headerHTML += "</tr></thead>";
 
 // Body: bar chart row first
 let bodyHTML = "<tbody>";
+function stackedBar(names, label) {
+  const spieler = names.filter(n => !GOALKEEPERS.has(n) && !UNAVAILABLE_PLAYERS.has(n)).length;
+  const torwarte = names.filter(n => GOALKEEPERS.has(n) && !UNAVAILABLE_PLAYERS.has(n)).length;
+  const ehre = names.filter(n => UNAVAILABLE_PLAYERS.has(n)).length;
+  const total = spieler + torwarte + ehre;
+  const totalPct = (total / maxPossible) * 100;
+  const segs = [
+    { count: ehre, color: '#fdd835', fmt: n => `(${n})` },
+    { count: torwarte, color: '#1e88e5', fmt: n => `${n}TW` },
+    { count: spieler, color: '#43a047', fmt: n => `${n}` },
+  ].filter(s => s.count > 0);
+  const segsHTML = segs.map(s => `<div style="flex:${s.count};background:${s.color};display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:600;color:rgba(0,0,0,0.55);overflow:hidden">${s.fmt(s.count)}</div>`).join('');
+  return `<div class="bar-cell" style="flex:1">` +
+    `<div class="bar-value" style="font-size:9px">${label} ${total}</div>` +
+    `<div style="width:100%;height:${totalPct}%;display:flex;flex-direction:column;border-radius:3px 3px 0 0;overflow:hidden">${segsHTML}</div>` +
+    `</div>`;
+}
+
 bodyHTML += '<tr class="bar-row"><td class="name-col" style="font-weight:600;font-size:12px;">Verfügbar</td>';
 weeks.forEach((week, i) => {
-  const count = weekStats[i].availableCount;
-  const pct = (count / maxPossible) * 100;
-  const ratio = count / maxPossible;
-  let color;
-  if (ratio >= 0.8) color = "#43a047";
-  else if (ratio >= 0.6) color = "#7cb342";
-  else if (ratio >= 0.4) color = "#fdd835";
-  else color = "#e53935";
-  const outline = count === maxAvailable ? "outline:2px solid #1b5e20;" : "";
-  bodyHTML += `<td><div class="bar-cell"><div class="bar-value">${count}</div><div class="bar" style="height:${pct}%;background:${color};${outline}"></div></div></td>`;
+  const { tuesdayAvailable, thursdayAvailable } = weekStats[i];
+  bodyHTML += `<td><div style="display:flex;gap:2px;height:100%;align-items:flex-end">` +
+    stackedBar(tuesdayAvailable, 'Di') +
+    stackedBar(thursdayAvailable, 'Do') +
+    `</div></td>`;
 });
 bodyHTML += "</tr>";
 
+function abbrevName(name) {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return name;
+  return parts[0] + '\u00a0' + parts.slice(1).map(p => p[0] + '.').join(' ');
+}
+
+const summaryGroups = [
+  { label: "Spieler", filter: name => !GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name) },
+  { label: "Torwarte", filter: name => GOALKEEPERS.has(name) && !UNAVAILABLE_PLAYERS.has(name) },
+  { label: "Ehre", filter: name => UNAVAILABLE_PLAYERS.has(name) },
+];
+
+function renderSplitGroups(tuNames, thNames) {
+  return summaryGroups.map(group => {
+    const tu = tuNames.filter(group.filter);
+    const th = thNames.filter(group.filter);
+    if (tu.length === 0 && th.length === 0) return '';
+    const tuList = tu.map(name => `<span class="week-summary-name">${abbrevName(name)}</span>`).join("");
+    const thList = th.map(name => `<span class="week-summary-name">${abbrevName(name)}</span>`).join("");
+    return `<div style="margin-bottom:6px">` +
+      `<div style="font-size:9px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:0.03em;margin-bottom:2px">${group.label}</div>` +
+      `<div style="display:flex;gap:6px">` +
+      `<div style="flex:1"><div class="week-summary-list">${tuList || '<span class="partial-names">–</span>'}</div></div>` +
+      `<div style="flex:1"><div class="week-summary-list">${thList || '<span class="partial-names">–</span>'}</div></div>` +
+      `</div></div>`;
+  }).join("");
+}
+
 bodyHTML += '<tr class="week-summary-row"><td class="week-summary-label">Kader</td>';
-weeks.forEach((week, i) => {
-  const { fullyAvailable, semiAvailable } = weekStats[i];
-  const items = [];
-  fullyAvailable.forEach(name => {
-    items.push(`<span class="week-summary-name">${name}</span>`);
-  });
-  semiAvailable.forEach(name => {
-    items.push(`<span class="week-summary-name partial-names">(${name})</span>`);
-  });
-  if (items.length === 0) {
-    items.push('<span class="week-summary-name partial-names">Niemand</span>');
-  }
-  bodyHTML += `<td class="week-summary-cell"><div class="week-summary-list">${items.join("")}</div></td>`;
-});
+weeks.forEach(() => { bodyHTML += '<td></td>'; });
 bodyHTML += '</tr>';
+
+summaryGroups.forEach(group => {
+  bodyHTML += `<tr class="week-summary-row"><td class="week-summary-label" style="padding-left:10px;color:#888;font-size:11px">${group.label}</td>`;
+  weeks.forEach((week, i) => {
+    const { tuesdayAvailable, thursdayAvailable } = weekStats[i];
+    const tu = tuesdayAvailable.filter(group.filter);
+    const th = thursdayAvailable.filter(group.filter);
+    const tuList = tu.map(name => `<span class="week-summary-name">${abbrevName(name)}</span>`).join("") || '<span class="partial-names">–</span>';
+    const thList = th.map(name => `<span class="week-summary-name">${abbrevName(name)}</span>`).join("") || '<span class="partial-names">–</span>';
+    bodyHTML += `<td class="week-summary-cell"><div style="display:flex;gap:6px"><div style="flex:1"><div class="week-summary-list">${tuList}</div></div><div style="flex:1"><div class="week-summary-list">${thList}</div></div></div></td>`;
+  });
+  bodyHTML += '</tr>';
+});
 
 // Spacer row
 bodyHTML += '<tr style="height:8px"><td colspan="' + (weeks.length + 1) + '" style="border:none;padding:0"></td></tr>';
@@ -310,17 +361,35 @@ groupedTeam.forEach(group => {
   bodyHTML += `<tr class="category-row"><td colspan="${weeks.length + 1}">${group.label}</td></tr>`;
   group.names.forEach(name => {
     bodyHTML += `<tr><td class="name-col">${name}</td>`;
-    weeks.forEach(week => {
+    weeks.forEach((week, wi) => {
       const dayFlags = dayAbsenceMap[name][week.num];
-      let dots = '<div class="days-grid">';
-      for (let d = 0; d < 7; d++) {
-        const dotCls = dayFlags[d] ? 'away' : 'here';
-        const dayDate = addDays(week.start, d);
-        const fullDate = formatFullDate(dayDate);
-        dots += `<button type="button" class="day-square ${dotCls}" data-person="${name}" data-date="${fullDate}" aria-label="${name}, ${fullDate}"></button>`;
+      const prevFlags = wi > 0 ? dayAbsenceMap[name][weeks[wi - 1].num] : null;
+      const nextFlags = wi < weeks.length - 1 ? dayAbsenceMap[name][weeks[wi + 1].num] : null;
+      // Find contiguous absence runs within this week
+      const runs = [];
+      let runStart = -1;
+      for (let d = 0; d <= 7; d++) {
+        const absent = d < 7 && dayFlags[d];
+        if (absent && runStart === -1) { runStart = d; }
+        else if (!absent && runStart !== -1) { runs.push({ start: runStart, end: d - 1 }); runStart = -1; }
       }
-      dots += '</div>';
-      bodyHTML += `<td class="day-cell">${dots}</td>`;
+      if (runs.length === 0) {
+        bodyHTML += `<td class="day-cell"></td>`;
+      } else {
+        const barsHTML = runs.map(run => {
+          const leftPct = (run.start / 7 * 100).toFixed(2);
+          const widthPct = ((run.end - run.start + 1) / 7 * 100).toFixed(2);
+          const leftFlat = run.start === 0 && prevFlags && prevFlags[6];
+          const rightFlat = run.end === 6 && nextFlags && nextFlags[0];
+          const br = `${leftFlat ? 0 : 4}px ${rightFlat ? 0 : 4}px ${rightFlat ? 0 : 4}px ${leftFlat ? 0 : 4}px`;
+          const runStartDate = addDays(week.start, run.start);
+          const runEndDate = addDays(week.start, run.end);
+          const match = vacationData.find(v => v.name === name && parseDate(v.start) <= runEndDate && parseDate(v.end) >= runStartDate);
+          const period = match ? `${match.start} \u2013 ${match.end}` : '';
+          return `<div class="gantt-bar" style="left:${leftPct}%;width:${widthPct}%;border-radius:${br}" data-person="${name}" data-period="${period}"></div>`;
+        }).join('');
+        bodyHTML += `<td class="day-cell"><div class="gantt-row">${barsHTML}</div></td>`;
+      }
     });
     bodyHTML += "</tr>";
   });
@@ -331,42 +400,42 @@ bodyHTML += "</tbody>";
 table.innerHTML = headerHTML + bodyHTML;
 
 table.addEventListener("pointerenter", event => {
-  const square = event.target.closest(".day-square");
-  if (!square || activePopoverTarget) return;
-  showPopover(square);
+  const bar = event.target.closest(".gantt-bar");
+  if (!bar || activePopoverTarget) return;
+  showPopover(bar);
 }, true);
 
 table.addEventListener("pointerleave", event => {
-  const square = event.target.closest(".day-square");
-  if (!square || activePopoverTarget === square) return;
+  const bar = event.target.closest(".gantt-bar");
+  if (!bar || activePopoverTarget === bar) return;
   hidePopover();
 }, true);
 
 table.addEventListener("focusin", event => {
-  const square = event.target.closest(".day-square");
-  if (!square) return;
-  showPopover(square);
+  const bar = event.target.closest(".gantt-bar");
+  if (!bar) return;
+  showPopover(bar);
 });
 
 table.addEventListener("focusout", event => {
   if (activePopoverTarget) return;
   const nextTarget = event.relatedTarget;
-  if (nextTarget && nextTarget.closest && nextTarget.closest(".day-square")) return;
+  if (nextTarget && nextTarget.closest && nextTarget.closest(".gantt-bar")) return;
   hidePopover();
 });
 
 table.addEventListener("click", event => {
-  const square = event.target.closest(".day-square");
-  if (!square) return;
-  if (activePopoverTarget === square) {
+  const bar = event.target.closest(".gantt-bar");
+  if (!bar) return;
+  if (activePopoverTarget === bar) {
     hidePopover();
     return;
   }
-  showPopover(square, true);
+  showPopover(bar, true);
 });
 
 document.addEventListener("click", event => {
-  if (event.target.closest(".day-square") || event.target.closest(".popover")) return;
+  if (event.target.closest(".gantt-bar") || event.target.closest(".popover")) return;
   hidePopover();
 });
 
